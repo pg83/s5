@@ -57,6 +57,13 @@ jobs:
           sudo /usr/sbin/sshd -D -e -f "$RUNNER_TEMP/sshd_config" &
           sshd_pid=$!
           trap 'sudo kill "$sshd_pid" 2>/dev/null || true' EXIT
+          sudo iptables -I INPUT 1 -p tcp --dport 2222 -j ACCEPT
+          sleep 1
+          sudo ss -lntp 'sport = :2222'
+          ssh-keyscan -T 5 -p 2222 127.0.0.1
+          ip -brief -4 address
+          curl -fsS --noproxy '*' --max-time 5 -H 'Metadata: true' \
+            'http://169.254.169.254/metadata/instance/network/interface/0/ipv4/ipAddress/0?api-version=2021-02-01' || true
           ip=$(curl -4fsS --retry 3 --connect-timeout 10 --max-time 30 https://api.ipify.org)
           python3 -c 'import ipaddress,sys; assert ipaddress.IPv4Address(sys.argv[1]).is_global' "$ip"
           printf '%s\n' "$ip" > host1
