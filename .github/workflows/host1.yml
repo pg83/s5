@@ -1,0 +1,71 @@
+name: host1
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 */3 * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: host1
+  cancel-in-progress: true
+
+jobs:
+  sshd:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Run SSH and publish address
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq openssh-server
+          sudo useradd --create-home --shell /bin/sh --password '*' s5
+          sudo install -d -m 0755 /run/sshd
+          sudo install -d -m 0700 -o s5 -g s5 /home/s5/.ssh
+          sudo install -m 0600 -o s5 -g s5 .github/authorized_keys /home/s5/.ssh/authorized_keys
+          sudo ssh-keygen -A
+          cat > "$RUNNER_TEMP/sshd_config" <<'EOF'
+          Port 2222
+          ListenAddress 0.0.0.0
+          HostKey /etc/ssh/ssh_host_ed25519_key
+          PidFile /run/sshd-s5.pid
+          AuthorizedKeysFile .ssh/authorized_keys
+          AllowUsers s5
+          PermitRootLogin no
+          PubkeyAuthentication yes
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          AuthenticationMethods publickey
+          AllowTcpForwarding local
+          AllowAgentForwarding no
+          X11Forwarding no
+          PermitTTY no
+          MaxSessions 0
+          GatewayPorts no
+          UsePAM no
+          LogLevel VERBOSE
+          EOF
+          sudo /usr/sbin/sshd -t -f "$RUNNER_TEMP/sshd_config"
+          sudo /usr/sbin/sshd -D -e -f "$RUNNER_TEMP/sshd_config" &
+          sshd_pid=$!
+          trap 'sudo kill "$sshd_pid" 2>/dev/null || true' EXIT
+          ip=$(curl -4fsS --retry 3 --connect-timeout 10 --max-time 30 https://api.ipify.org)
+          python3 -c 'import ipaddress,sys; assert ipaddress.IPv4Address(sys.argv[1]).is_global' "$ip"
+          printf '%s\n' "$ip" > host1
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add host1
+          if ! git diff --cached --quiet; then
+            git commit -m 'Update host1 address'
+            git push origin HEAD:main
+          fi
+          echo "SSH endpoint: s5@$ip port 2222"
+          wait "$sshd_pid"
