@@ -14,8 +14,13 @@ concurrency:
 
 jobs:
   sshd:
+    name: ${{ matrix.lab }}
     runs-on: ubuntu-24.04
     timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        lab: [lab1, lab2, lab3]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,5 +31,5 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq openssh-server socat
 
-      - name: Connect to labs
-        run: sudo python3 -u runner.py
+      - name: Connect to lab
+        run: sudo python3 -u runner.py "${{ matrix.lab }}"

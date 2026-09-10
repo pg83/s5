@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import argparse
 import asyncio
 import contextlib
 import os
@@ -90,20 +91,22 @@ async def connect(name, host, port, config):
         await asyncio.sleep(5)
 
 
-async def run(config):
+async def run(config, lab):
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
 
     async with asyncio.TaskGroup() as group:
-        tasks = [group.create_task(connect(name, host, port, config))
-                 for name, (host, port) in LABS.items()]
+        host, port = LABS[lab]
+        task = group.create_task(connect(lab, host, port, config))
         await stop.wait()
-        for task in tasks:
-            task.cancel()
+        task.cancel()
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Connect one lab to this runner over SSH.')
+    parser.add_argument('lab', choices=LABS)
+    args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix='s5-') as directory:
-        asyncio.run(run(setup(Path(directory))))
+        asyncio.run(run(setup(Path(directory)), args.lab))
